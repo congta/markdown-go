@@ -5,13 +5,10 @@ package parser
 
 import (
 	"bytes"
+	"congta.com/qunmus/markdown/ast"
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
-
-	"github.com/gomarkdown/markdown/ast"
 )
 
 // Extensions is a bitmask of enabled parser extensions.
@@ -58,7 +55,7 @@ const (
 )
 
 // for each character that triggers a response when parsing inline data.
-type InlineParser func(p *Parser, data []byte, offset int) (int, ast.Node)
+type inlineParser func(p *Parser, data []byte, offset int) (int, ast.Node)
 
 // ReferenceOverrideFunc is expected to be called with a reference string and
 // return either a valid Reference type that the reference string maps to or
@@ -100,7 +97,7 @@ type Parser struct {
 
 	refs           map[string]*reference
 	refsRecord     map[string]struct{}
-	inlineCallback [256]InlineParser
+	inlineCallback [256]inlineParser
 	nesting        int
 	maxNesting     int
 	insideLink     bool
@@ -124,8 +121,6 @@ type Parser struct {
 	// collect headings where we auto-generated id so that we can
 	// ensure they are unique at the end
 	allHeadingsWithAutoID []*ast.Heading
-
-	didParse bool
 }
 
 // New creates a markdown parser with CommonExtensions.
@@ -142,7 +137,7 @@ func NewWithExtensions(extension Extensions) *Parser {
 	p := Parser{
 		refs:         make(map[string]*reference),
 		refsRecord:   make(map[string]struct{}),
-		maxNesting:   64,
+		maxNesting:   16,
 		insideLink:   false,
 		Doc:          &ast.Document{},
 		extensions:   extension,
@@ -185,7 +180,7 @@ func NewWithExtensions(extension Extensions) *Parser {
 	return &p
 }
 
-func (p *Parser) RegisterInline(n byte, fn InlineParser) InlineParser {
+func (p *Parser) RegisterInline(n byte, fn inlineParser) inlineParser {
 	prev := p.inlineCallback[n]
 	p.inlineCallback[n] = fn
 	return prev
@@ -233,8 +228,10 @@ func canNodeContain(n ast.Node, v ast.Node) bool {
 	switch n.(type) {
 	case *ast.List:
 		return isListItem(v)
-	case *ast.Document, *ast.BlockQuote, *ast.Aside, *ast.ListItem, *ast.CaptionFigure:
+	case *ast.Document, *ast.BlockQuote, *ast.Sparrow, *ast.Aside, *ast.ListItem, *ast.CaptionFigure:
 		return !isListItem(v)
+	case *ast.Division:
+		return true // division can contain everything
 	case *ast.Table:
 		switch v.(type) {
 		case *ast.TableHeader, *ast.TableBody, *ast.TableFooter:
@@ -294,14 +291,7 @@ type Reference struct {
 //
 // You can then convert AST to html using html.Renderer, to some other format
 // using a custom renderer or transform the tree.
-//
-// Parser is not reusable. Create a new Parser for each Parse() call.
 func (p *Parser) Parse(input []byte) ast.Node {
-	if p.didParse {
-		panic("Parser is not reusable. Must create new Parser for each Parse() call.")
-	}
-	p.didParse = true
-
 	// the code only works with Unix CR newlines so to make life easy for
 	// callers normalize newlines
 	input = NormalizeNewlines(input)
@@ -738,21 +728,7 @@ func IsPunctuation(c byte) bool {
 	return false
 }
 
-func IsPunctuation2(d []byte) bool {
-	if len(d) == 0 {
-		return false
-	}
-	if IsPunctuation(d[0]) {
-		return true
-	}
-	r, _ := utf8.DecodeRune(d)
-	if r == utf8.RuneError {
-		return false
-	}
-	return unicode.IsPunct(r)
-}
-
-// IsSpace returns true if c is a white-space character
+// IsSpace returns true if c is a white-space charactr
 func IsSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
 }
@@ -932,9 +908,6 @@ func isListItem(d ast.Node) bool {
 }
 
 func NormalizeNewlines(d []byte) []byte {
-	res := make([]byte, len(d))
-	copy(res, d)
-	d = res
 	wi := 0
 	n := len(d)
 	for i := 0; i < n; i++ {

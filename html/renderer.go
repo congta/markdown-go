@@ -2,6 +2,8 @@ package html
 
 import (
 	"bytes"
+	"congta.com/qunmus/markdown/ast"
+	"congta.com/qunmus/markdown/parser"
 	"fmt"
 	"html"
 	"io"
@@ -9,9 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/gomarkdown/markdown/ast"
-	"github.com/gomarkdown/markdown/parser"
+	"unicode/utf8"
 )
 
 // Flags control optional behavior of HTML renderer.
@@ -114,7 +114,7 @@ type RendererOptions struct {
 	Comments [][]byte
 
 	// Generator is a meta tag that is inserted in the generated HTML so show what rendered it. It should not include the closing tag.
-	// Defaults (note content quote is not closed) to `  <meta name="GENERATOR" content="github.com/gomarkdown/markdown markdown processor for Go`
+	// Defaults (note content quote is not closed) to `  <meta name="GENERATOR" content="github.com/congta/markdown-go markdown processor for Go`
 	Generator string
 }
 
@@ -205,7 +205,7 @@ func NewRenderer(opts RendererOptions) *Renderer {
 		opts.CitationFormatString = `<sup>[%s]</sup>`
 	}
 	if opts.Generator == "" {
-		opts.Generator = `  <meta name="GENERATOR" content="github.com/gomarkdown/markdown markdown processor for Go`
+		opts.Generator = `  <meta name="GENERATOR" content="github.com/congta/markdown-go markdown processor for Go`
 	}
 
 	return &Renderer{
@@ -439,6 +439,83 @@ func (r *Renderer) NonBlockingSpace(w io.Writer, node *ast.NonBlockingSpace) {
 	r.Outs(w, "&nbsp;")
 }
 
+// Sparrow writes ast.Sparrow node
+func (r *Renderer) Sparrow(w io.Writer, sparrow *ast.Sparrow, entering bool) {
+	desc := sparrow.Desc
+	anno := "default"
+	if strings.Contains(desc, "@") {
+		idx := strings.Index(desc, "@")
+		anno = desc[:idx]
+		desc = desc[idx+1:]
+	}
+	if entering {
+		r.CR(w)
+		switch sparrow.Name {
+		case "grey", "gray":
+			fallthrough
+		case "note", "notice", "primary", "blue":
+			fallthrough
+		case "info", "success", "green":
+			fallthrough
+		case "warning", "warn", "yellow":
+			fallthrough
+		case "error", "danger", "red":
+			AddClass(sparrow, "ca-alert")
+			AddClass(sparrow, "ca-alert-"+sparrow.Name)
+			AddClass(sparrow, "coma-anno-"+anno)
+			r.Outs(w, TagWithAttributes("<div", BlockAttrs(sparrow)))
+		case "tip":
+			r.Outs(w, fmt.Sprintf(`<div class="coma-sparrow coma-sparrow-%s coma-anno-%s">
+<p class="coma-sparrow-title">%s</p>
+<div class="coma-sparrow-body">`, sparrow.Name, anno, desc))
+		case "poetry":
+			parts := strings.Split(desc, " ")
+			author := ""
+			if len(parts) > 1 {
+				author = parts[1]
+			}
+			AddClass(sparrow, "coma-poetry")
+			AddClass(sparrow, "coma-anno-"+anno)
+			tag := TagWithAttributes("<div", BlockAttrs(sparrow))
+			if parts[0] != "" {
+				r.Outs(w, tag+fmt.Sprintf(`<h2>%s<span class="coma-meta coma-small">%s</span></h2>`, parts[0], author))
+			} else {
+				r.Outs(w, tag)
+			}
+		case "details":
+			if desc == "" {
+				desc = "查看"
+			}
+			fallthrough
+		default:
+			r.Outs(w, fmt.Sprintf(`<div class="layui-collapse coma-sparrow-%s coma-anno-%s">
+<div class="layui-colla-item">
+<div class="layui-colla-title">%s</div>
+<div class="layui-colla-content">`, sparrow.Name, anno, desc))
+		}
+	} else {
+		switch sparrow.Name {
+		case "grey", "gray":
+			fallthrough
+		case "note", "notice", "primary", "blue":
+			fallthrough
+		case "info", "success", "green":
+			fallthrough
+		case "warning", "warn", "yellow":
+			fallthrough
+		case "error", "danger", "red":
+			r.Outs(w, "</div>")
+		case "tip":
+			r.Outs(w, "</div></div>")
+		case "poetry":
+			r.Outs(w, "</div>")
+		default:
+			r.Outs(w, "</div></div></div>")
+		}
+		r.CR(w)
+	}
+}
+
 // OutOneOf writes first or second depending on outFirst
 func (r *Renderer) OutOneOf(w io.Writer, outFirst bool, first string, second string) {
 	if outFirst {
@@ -607,8 +684,29 @@ func (r *Renderer) Paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
 
 // Code writes ast.Code node
 func (r *Renderer) Code(w io.Writer, node *ast.Code) {
-	r.Outs(w, "<code>")
-	EscapeHTML(w, node.Literal)
+	annotation := []byte("default")
+	literal := node.Literal
+	if idx := bytes.IndexByte(literal, '@'); idx > 0 && idx < len(literal)-1 {
+		isASCII := true
+		annotation = literal[:idx]
+		for _, b := range annotation {
+			if b >= utf8.RuneSelf {
+				isASCII = false
+				break
+			}
+		}
+		if isASCII {
+			literal = literal[idx+1:]
+		}
+	}
+
+	if len(annotation) > 0 {
+		r.Outs(w, fmt.Sprintf("<code class=\"coma-anno-%s\">", string(annotation)))
+	} else {
+		r.Outs(w, "<code>")
+	}
+
+	EscapeHTML(w, literal)
 	r.Outs(w, "</code>")
 }
 
@@ -641,29 +739,14 @@ func (r *Renderer) EnsureUniqueHeadingID(id string) string {
 	return id
 }
 
-func (r *Renderer) MakeUniqueHeadingID(hdr *ast.Heading) string {
-	if hdr.HeadingID == "" {
-		return ""
-	}
-	id := r.EnsureUniqueHeadingID(hdr.HeadingID)
-	if r.Opts.HeadingIDPrefix != "" {
-		id = r.Opts.HeadingIDPrefix + id
-	}
-	if r.Opts.HeadingIDSuffix != "" {
-		id = id + r.Opts.HeadingIDSuffix
-	}
-	hdr.HeadingID = id
-	return id
-}
-
-func (r *Renderer) HeadingEnter(w io.Writer, hdr *ast.Heading) {
+func (r *Renderer) headingEnter(w io.Writer, nodeData *ast.Heading) {
 	var attrs []string
 	var class string
 	// TODO(miek): add helper functions for coalescing these classes.
-	if hdr.IsTitleblock {
+	if nodeData.IsTitleblock {
 		class = "title"
 	}
-	if hdr.IsSpecial {
+	if nodeData.IsSpecial {
 		if class != "" {
 			class += " special"
 		} else {
@@ -674,29 +757,35 @@ func (r *Renderer) HeadingEnter(w io.Writer, hdr *ast.Heading) {
 		attrs = []string{`class="` + class + `"`}
 	}
 
-	if hdr.HeadingID != "" {
-		id := r.MakeUniqueHeadingID(hdr)
+	if nodeData.HeadingID != "" {
+		id := r.EnsureUniqueHeadingID(nodeData.HeadingID)
+		if r.Opts.HeadingIDPrefix != "" {
+			id = r.Opts.HeadingIDPrefix + id
+		}
+		if r.Opts.HeadingIDSuffix != "" {
+			id = id + r.Opts.HeadingIDSuffix
+		}
 		attrID := `id="` + id + `"`
 		attrs = append(attrs, attrID)
 	}
-	attrs = append(attrs, BlockAttrs(hdr)...)
+	attrs = append(attrs, BlockAttrs(nodeData)...)
 	r.CR(w)
-	r.OutTag(w, HeadingOpenTagFromLevel(hdr.Level), attrs)
+	r.OutTag(w, HeadingOpenTagFromLevel(nodeData.Level), attrs)
 }
 
-func (r *Renderer) HeadingExit(w io.Writer, hdr *ast.Heading) {
-	r.Outs(w, HeadingCloseTagFromLevel(hdr.Level))
-	if !(IsListItem(hdr.Parent) && ast.GetNextNode(hdr) == nil) {
+func (r *Renderer) headingExit(w io.Writer, heading *ast.Heading) {
+	r.Outs(w, HeadingCloseTagFromLevel(heading.Level))
+	if !(IsListItem(heading.Parent) && ast.GetNextNode(heading) == nil) {
 		r.CR(w)
 	}
 }
 
 // Heading writes ast.Heading node
-func (r *Renderer) Heading(w io.Writer, hdr *ast.Heading, entering bool) {
+func (r *Renderer) Heading(w io.Writer, node *ast.Heading, entering bool) {
 	if entering {
-		r.HeadingEnter(w, hdr)
+		r.headingEnter(w, node)
 	} else {
-		r.HeadingExit(w, hdr)
+		r.headingExit(w, node)
 	}
 }
 
@@ -1028,6 +1117,11 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.BlockQuote:
 		tag := TagWithAttributes("<blockquote", BlockAttrs(node))
 		r.OutOneOfCr(w, entering, tag, "</blockquote>")
+	case *ast.Sparrow:
+		r.Sparrow(w, node, entering)
+	case *ast.Division:
+		tag := TagWithAttributes("<div", BlockAttrs(node))
+		r.OutOneOfCr(w, entering, tag, "</div>")
 	case *ast.Aside:
 		tag := TagWithAttributes("<aside", BlockAttrs(node))
 		r.OutOneOfCr(w, entering, tag, "</aside>")
@@ -1234,7 +1328,7 @@ func (r *Renderer) writeTOC(w io.Writer, doc ast.Node) {
 	}
 
 	if buf.Len() > 0 {
-		io.WriteString(w, "<nav>\n")
+		io.WriteString(w, "<nav id='toc'>\n")
 		w.Write(buf.Bytes())
 		io.WriteString(w, "\n\n</nav>\n")
 	}
@@ -1296,6 +1390,23 @@ func Slugify(in []byte) []byte {
 		}
 	}
 	return out[a : b+1]
+}
+
+func AddClass(node ast.Node, class string) {
+	var attr *ast.Attribute
+	if c := node.AsContainer(); c != nil {
+		if c.Attribute == nil {
+			c.Attribute = &ast.Attribute{}
+		}
+		attr = c.Attribute
+	}
+	if l := node.AsLeaf(); l != nil {
+		if l.Attribute == nil {
+			l.Attribute = &ast.Attribute{}
+		}
+		attr = l.Attribute
+	}
+	attr.Classes = append(attr.Classes, []byte(class))
 }
 
 // BlockAttrs takes a node and checks if it has block level attributes set. If so it

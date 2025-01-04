@@ -2,12 +2,11 @@ package parser
 
 import (
 	"bytes"
+	"congta.com/qunmus/markdown/ast"
 	"html"
 	"regexp"
 	"strconv"
 	"unicode"
-
-	"github.com/gomarkdown/markdown/ast"
 )
 
 // Parsing block-level elements.
@@ -76,7 +75,6 @@ var (
 		"output":     {},
 		"progress":   {},
 		"section":    {},
-		"svg":        {},
 		"video":      {},
 	}
 )
@@ -116,6 +114,7 @@ func (p *Parser) Block(data []byte) {
 
 	// parse out one block-level construct at a time
 	for len(data) > 0 {
+
 		// attributes that can be specific before a block element:
 		//
 		// {#id .class1 .class2 key="value"}
@@ -197,6 +196,20 @@ func (p *Parser) Block(data []byte) {
 			continue
 		}
 
+		// division block, need support of attributes:
+		//
+		// {#id .class} {
+		//   ...
+		// }
+		// or
+		// {#id .class} {}
+		if p.extensions&Attributes != 0 {
+			if i := p.division(data, true); i > 0 {
+				data = data[i:]
+				continue
+			}
+		}
+
 		if data[0] == '<' {
 			if i := p.html(data, true); i > 0 {
 				data = data[i:]
@@ -265,6 +278,9 @@ func (p *Parser) Block(data []byte) {
 			i := skipUntilChar(data, 0, '\n')
 			hr := ast.HorizontalRule{}
 			hr.Literal = bytes.Trim(data[:i], " \n")
+			if len(hr.Literal) == 3 {
+				p.AddClass("short")
+			}
 			p.AddBlock(&hr)
 			data = data[i:]
 			continue
@@ -276,6 +292,16 @@ func (p *Parser) Block(data []byte) {
 		// > on the web
 		if p.quotePrefix(data) > 0 {
 			data = data[p.quote(data):]
+			continue
+		}
+
+		// sparrow block:
+		//
+		// ::: details myContainer
+		// Hello World!
+		// :::
+		if i := p.sparrowBlock(data, true); i > 0 {
+			data = data[i:]
 			continue
 		}
 
@@ -383,6 +409,13 @@ func (p *Parser) Block(data []byte) {
 	p.nesting--
 }
 
+func (p *Parser) AddClass(class string) {
+	if p.attr == nil {
+		p.attr = &ast.Attribute{Attrs: make(map[string][]byte)}
+	}
+	p.attr.Classes = append(p.attr.Classes, []byte(class))
+}
+
 func (p *Parser) AddBlock(n ast.Node) ast.Node {
 	p.closeUnmatchedBlocks()
 
@@ -396,6 +429,14 @@ func (p *Parser) AddBlock(n ast.Node) ast.Node {
 		p.attr = nil
 	}
 	return p.addChild(n)
+}
+
+func (p *Parser) isPrefixDivision(data []byte) bool {
+	if len(data) < 3 || data[0] != '{' {
+		return false
+	}
+	end, _, _ := isDivisionBegin(data, 0)
+	return end > 0
 }
 
 func (p *Parser) isPrefixHeading(data []byte) bool {
@@ -825,6 +866,96 @@ func isHRule(data []byte) bool {
 	return n >= 3
 }
 
+// isSparrowLine checks if there's a sparrow line (e.g., '::: name' or '::: name desc') at the beginning of data,
+// and returns the end index if so, or 0 otherwise. It also returns the marker found.
+// If syntax is not nil, it gets set to the syntax specified in the fence line.
+func isSparrowLine(data []byte, name, desc *string, oldmarker string) (end int, marker string) {
+	i, size := 0, 0
+
+	n := len(data)
+	// skip up to three spaces
+	for i < n && i < 3 && data[i] == ' ' {
+		i++
+	}
+
+	// check for the marker characters: ~ or `
+	if i >= n {
+		return 0, ""
+	}
+	if data[i] != ':' {
+		return 0, ""
+	}
+
+	c := data[i]
+
+	// the whole line must be the same char or whitespace
+	for i < n && data[i] == c {
+		size++
+		i++
+	}
+
+	// the marker char must occur at least 3 times
+	if size < 3 {
+		return 0, ""
+	}
+	marker = string(data[i-size : i])
+
+	// if this is the end marker, it must match the beginning marker
+	if oldmarker != "" && marker != oldmarker {
+		return 0, ""
+	}
+
+	// if just read the beginning marker, read the syntax
+	if oldmarker == "" {
+		i = skipChar(data, i, ' ')
+		if i >= n {
+			if i == n {
+				return i, marker
+			}
+			return 0, ""
+		}
+
+		nameStart, nameLen := syntaxRange(data, &i)
+		if nameStart == 0 && nameLen == 0 {
+			return 0, ""
+		}
+
+		// caller wants the syntax
+		if name != nil {
+			*name = string(data[nameStart : nameStart+nameLen])
+		}
+
+		i = skipChar(data, i, ' ')
+		if i >= n {
+			if i == n {
+				return i, marker
+			}
+			return 0, ""
+		}
+
+		descStart := i
+		for i < n && data[i] != '\n' {
+			i++
+		}
+		descLen := i - descStart
+		if descStart != 0 || descLen != 0 {
+			// caller wants the syntax
+			if desc != nil {
+				*desc = string(data[descStart : descStart+descLen])
+			}
+		}
+	}
+
+	i = skipChar(data, i, ' ')
+	if i >= n || data[i] != '\n' {
+		if i == n {
+			return i, marker
+		}
+		return 0, ""
+	}
+	return i + 1, marker // Take newline into account.
+}
+
 // isFenceLine checks if there's a fence line (e.g., ``` or ``` go) at the beginning of data,
 // and returns the end index if so, or 0 otherwise. It also returns the marker found.
 // If syntax is not nil, it gets set to the syntax specified in the fence line.
@@ -926,7 +1057,7 @@ func syntaxRange(data []byte, iout *int) (int, int) {
 
 		i++
 	} else {
-		for i < n && data[i] != '\n' {
+		for i < n && !IsSpace(data[i]) {
 			syn++
 			i++
 		}
@@ -951,6 +1082,8 @@ func (p *Parser) fencedCodeBlock(data []byte, doRender bool) int {
 	work.WriteByte('\n')
 
 	for {
+		// safe to assume beg < len(data)
+
 		// check for the end of the code block
 		fenceEnd, _ := isFenceLine(data[beg:], nil, marker)
 		if fenceEnd != 0 {
@@ -967,48 +1100,299 @@ func (p *Parser) fencedCodeBlock(data []byte, doRender bool) int {
 		}
 
 		// verbatim copy to the working buffer
-		work.Write(data[beg:end])
+		if doRender {
+			work.Write(data[beg:end])
+		}
 		beg = end
 	}
 
-	if !doRender {
-		return beg
-	}
-	codeBlock := &ast.CodeBlock{
-		IsFenced: true,
-	}
-	codeBlock.Content = work.Bytes() // TODO: get rid of temp buffer
+	if doRender {
+		codeBlock := &ast.CodeBlock{
+			IsFenced: true,
+		}
+		codeBlock.Content = work.Bytes() // TODO: get rid of temp buffer
 
-	if p.extensions&Mmark == 0 {
+		if p.extensions&Mmark == 0 {
+			p.AddBlock(codeBlock)
+			finalizeCodeBlock(codeBlock)
+			return beg
+		}
+
+		// Check for caption and if found make it a figure.
+		if captionContent, id, consumed := p.caption(data[beg:], []byte(captionFigure)); consumed > 0 {
+			figure := &ast.CaptionFigure{}
+			caption := &ast.Caption{}
+			figure.HeadingID = id
+			p.Inline(caption, captionContent)
+
+			p.AddBlock(figure)
+			codeBlock.AsLeaf().Attribute = figure.AsContainer().Attribute
+			p.addChild(codeBlock)
+			finalizeCodeBlock(codeBlock)
+			p.addChild(caption)
+			p.Finalize(figure)
+
+			beg += consumed
+
+			return beg
+		}
+
+		// Still here, normal block
 		p.AddBlock(codeBlock)
 		finalizeCodeBlock(codeBlock)
-		return beg
 	}
-
-	// Check for caption and if found make it a figure.
-	if captionContent, id, consumed := p.caption(data[beg:], []byte(captionFigure)); consumed > 0 {
-		figure := &ast.CaptionFigure{}
-		caption := &ast.Caption{}
-		figure.HeadingID = id
-		p.Inline(caption, captionContent)
-
-		p.AddBlock(figure)
-		codeBlock.AsLeaf().Attribute = figure.AsContainer().Attribute
-		p.addChild(codeBlock)
-		finalizeCodeBlock(codeBlock)
-		p.addChild(caption)
-		p.Finalize(figure)
-
-		beg += consumed
-
-		return beg
-	}
-
-	// Still here, normal block
-	p.AddBlock(codeBlock)
-	finalizeCodeBlock(codeBlock)
 
 	return beg
+}
+
+// sparrowBlock returns the end index if data contains a sparrow block at the beginning,
+// or 0 otherwise. It writes to out if doRender is true, otherwise it has no side effects.
+// If doRender is true, a final newline is mandatory to recognize the sparrow block.
+func (p *Parser) sparrowBlock(data []byte, doRender bool) int {
+	var name, desc string
+	beg, marker := isSparrowLine(data, &name, &desc, "")
+	if beg == 0 || beg >= len(data) {
+		return 0
+	}
+
+	var work bytes.Buffer
+
+	for {
+		// safe to assume beg < len(data)
+
+		// check for the end of the code block
+		fenceEnd, _ := isSparrowLine(data[beg:], nil, nil, marker)
+		if fenceEnd != 0 {
+			beg += fenceEnd
+			break
+		}
+
+		// copy the current line
+		end := skipUntilChar(data, beg, '\n') + 1
+
+		// did we reach the end of the buffer without a closing marker?
+		if end >= len(data) {
+			return 0
+		}
+
+		// verbatim copy to the working buffer
+		if doRender {
+			work.Write(data[beg:end])
+		}
+		beg = end
+	}
+
+	if doRender {
+		sparrow := &ast.Sparrow{
+			Name: name,
+			Desc: desc,
+		}
+		if p.extensions&Mmark == 0 {
+			block := p.AddBlock(sparrow)
+			p.Block(work.Bytes())
+			p.Finalize(block)
+			return beg
+		}
+
+		if captionContent, id, consumed := p.caption(data[beg:], []byte(captionQuote)); consumed > 0 {
+			figure := &ast.CaptionFigure{}
+			caption := &ast.Caption{}
+			figure.HeadingID = id
+			p.Inline(caption, captionContent)
+
+			p.AddBlock(figure) // this discard any attributes
+			block := sparrow
+			block.AsContainer().Attribute = figure.AsContainer().Attribute
+			p.addChild(block)
+			p.Block(work.Bytes())
+			p.Finalize(block)
+
+			p.addChild(caption)
+			p.Finalize(figure)
+
+			beg += consumed
+
+			return beg
+		}
+
+		block := p.AddBlock(sparrow)
+		p.Block(work.Bytes())
+		p.Finalize(block)
+	}
+
+	return beg
+}
+
+var testParser = New()
+
+// isDivisionBegin checks if there's a division line (e.g., '{#id .class} {' or '{#id .class} {}') at the beginning of data,
+// and returns the end index if so, or beg index otherwise. It also returns whether the division is closed in single line.
+func isDivisionBegin(data []byte, beg int) (lineEnd int, attr []byte, closed bool) {
+	// i is line start, j is line end, beg is content begin (no leading spaces), end is content end (ends with '}')
+	if beg >= len(data) || data[beg] != '{' {
+		return beg, nil, closed
+	}
+	end := skipUntilChar(data, beg, '\n')
+	lineEnd = end
+	end = backChar(data, end, ' ')
+
+	if end == beg {
+		return beg, nil, closed
+	}
+	if data[end-1] != '{' && data[end-1] != '}' {
+		return beg, nil, closed
+	}
+
+	if data[end-1] == '}' {
+		closed = true
+		end--
+		end = backUntilChar(data, end, '{')
+	}
+	// this line is only "{\\s*}"
+	if beg+1 == end {
+		return beg, nil, closed
+	}
+	end--
+	end = backChar(data, end, ' ')
+
+	attr = make([]byte, end-beg+1)
+	for i := beg; i < end; i++ {
+		attr[i-beg] = data[i]
+	}
+	attr[end-beg] = '\n'
+
+	// test attribute
+	n := testParser.attribute(attr)
+	if len(n) == len(data) {
+		return beg, nil, closed
+	}
+	return lineEnd, attr, closed
+}
+
+// division returns the end index if data contains a big block at the beginning,
+// or 0 otherwise. It writes to out if doRender is true, otherwise it has no side effects.
+// If doRender is true, a final newline is mandatory to recognize the big block.
+func (p *Parser) division(data []byte, doRender bool) int {
+	// must starts with {
+	if len(data) < 3 || data[0] != '{' {
+		return 0
+	}
+	end, attr, closed := isDivisionBegin(data, 0)
+	if end == 0 {
+		return 0
+	}
+	if closed {
+		p.attribute(attr)
+		block := p.AddBlock(&ast.Division{})
+		inlineEnd := end - 1
+		inlineBeg := backUntilChar(data, inlineEnd, '{') // back function stops at pos+1
+		if inlineBeg+1 == inlineEnd && data[inlineBeg] == ' ' {
+			// tricky handle, treat space in closed division as '　'
+			p.Block([]byte("　"))
+		} else {
+			p.Block(data[inlineBeg:inlineEnd])
+		}
+		p.Finalize(block)
+		return end
+	}
+
+	blockEnd := 0
+	innerBeg := end
+	innerEnd := 0
+
+	beg := innerBeg
+	level := 0
+	indent := 100
+
+	for {
+		// safe to assume beg < len(data)
+
+		beg = skipChar(data, beg, '\n')
+		if beg >= len(data) {
+			// truncated data
+			innerEnd = len(data)
+			blockEnd = len(data)
+			break
+		}
+
+		// inner division with no leading spaces
+		end, _, closed = isDivisionBegin(data, beg)
+		if end != beg {
+			indent = 0
+			if !closed {
+				level++
+			}
+			beg = end
+			continue
+		}
+
+		end = skipUntilChar(data, beg, '\n')
+		if data[beg] == '}' && end == beg+1 {
+			// close tag
+			level--
+			if level == -1 {
+				innerEnd = beg - 1
+				blockEnd = end
+				break
+			}
+		}
+
+		leadingSpaces := skipChar(data, beg, ' ')
+		leadingTabs := skipChar(data, beg, '\t')
+		if leadingSpaces-beg >= 4 || leadingTabs-beg >= 1 {
+			if indent > 4 {
+				indent = 4
+			}
+		} else if leadingSpaces-beg > 2 {
+			if indent > 2 {
+				indent = 2
+			}
+		} else {
+			indent = 0
+		}
+
+		beg = end
+	}
+
+	if level != -1 {
+		// didn't find close tag
+		// may be warning log
+	}
+
+	var work bytes.Buffer
+	beg = innerBeg
+
+	for beg < innerEnd {
+		end = skipUntilChar(data, beg, '\n')
+		if end == beg { // empty line
+			work.Write(data[beg : end+1])
+			beg++
+			continue
+		}
+		if indent == 4 && data[beg] == '\t' {
+			beg++
+		} else if indent > 0 {
+			if beg+indent < end { // should always true
+				beg += indent
+			}
+		}
+
+		// verbatim copy to the working buffer
+		if doRender {
+			work.Write(data[beg : end+1])
+		}
+		beg = end + 1
+	}
+
+	if doRender {
+		// todo(zhangfucheng) is captionContent needed?
+		p.attribute(attr)
+		block := p.AddBlock(&ast.Division{})
+		p.Block(work.Bytes())
+		p.Finalize(block)
+	}
+
+	return blockEnd
 }
 
 func unescapeChar(str []byte) []byte {
@@ -1350,7 +1734,6 @@ func finalizeList(list *ast.List) {
 // Parse a single list item.
 // Assumes initial prefix is already removed if this is a sublist.
 func (p *Parser) listItem(data []byte, flags *ast.ListType) int {
-	isDefinitionList := *flags&ast.ListTypeDefinition != 0
 	// keep track of the indentation of the first line
 	itemIndent := 0
 	if data[0] == '\t' {
@@ -1383,7 +1766,7 @@ func (p *Parser) listItem(data []byte, flags *ast.ListType) int {
 	}
 	if i == 0 {
 		// if in definition list, set term flag and continue
-		if isDefinitionList {
+		if *flags&ast.ListTypeDefinition != 0 {
 			*flags |= ast.ListTypeTerm
 		} else {
 			return 0
@@ -1444,14 +1827,7 @@ gatherlines:
 
 		// If there is a fence line (marking starting of a code block)
 		// without indent do not process it as part of the list.
-		//
-		// does not apply for definition lists because it causes infinite
-		// loop if text before defintion term is fenced code block start
-		// marker but not part of actual fenced code block
-		// for defnition lists we're called after parsing fence code blocks
-		// so we kno this cannot be a fenced block
-		// https://github.com/gomarkdown/markdown/issues/326
-		if !isDefinitionList && p.extensions&FencedCode != 0 {
+		if p.extensions&FencedCode != 0 {
 			fenceLineEnd, _ := isFenceLine(chunk, nil, "")
 			if fenceLineEnd > 0 && indent == 0 {
 				*flags |= ast.ListItemEndOfList
@@ -1601,6 +1977,19 @@ func (p *Parser) renderParagraph(data []byte) {
 	}
 	para := &ast.Paragraph{}
 	para.Content = data[beg:end]
+	if bytes.HasPrefix(para.Content, []byte("|->")) || bytes.HasPrefix(para.Content, []byte(":->")) {
+		p.AddClass("right")
+		beg = skipChar(para.Content, 3, ' ')
+		para.Content = para.Content[beg:]
+	} else if bytes.HasPrefix(para.Content, []byte("<-|->")) || bytes.HasPrefix(para.Content, []byte("<-:->")) {
+		p.AddClass("justify")
+		beg = skipChar(para.Content, 5, ' ')
+		para.Content = para.Content[beg:]
+	} else if bytes.HasPrefix(para.Content, []byte("->|<-")) || bytes.HasPrefix(para.Content, []byte("->:<-")) {
+		p.AddClass("center")
+		beg = skipChar(para.Content, 3, ' ')
+		para.Content = para.Content[beg:]
+	}
 	p.AddBlock(para)
 }
 
@@ -1656,11 +2045,9 @@ func (p *Parser) paragraph(data []byte) int {
 		if n := IsEmpty(current); n > 0 {
 			// did this blank line followed by a definition list item?
 			if p.extensions&DefinitionLists != 0 {
-				if i < len(data)-1 && data[i+1] == ':' {
+				if i < len(data)-2 && data[i+1] == ':' && data[i+2] == ' ' {
 					listLen := p.list(data[prev:], ast.ListTypeDefinition, 0, '.')
-					if listLen > 0 {
-						return prev + listLen
-					}
+					return prev + listLen
 				}
 			}
 
@@ -1713,6 +2100,12 @@ func (p *Parser) paragraph(data []byte) int {
 			p.renderParagraph(data[:i])
 			return i
 		}
+
+		// if there's a division after this, paragraph is over
+		//if p.isPrefixDivision(current) {
+		//	p.renderParagraph(data[:i])
+		//	return i
+		//}
 
 		// if there's a block quote, paragraph is over
 		if p.quotePrefix(current) > 0 {

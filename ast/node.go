@@ -323,6 +323,19 @@ type CodeBlock struct {
 	FenceOffset int
 }
 
+// Division parent div of multiple blocks
+type Division struct {
+	Container
+}
+
+// Sparrow represents markdown custom container block node (rename to sparrow due to Container is already used, and it means 'sparrow is small, but fully-equipped')
+type Sparrow struct {
+	Container
+
+	Name string
+	Desc string
+}
+
 // Softbreak represents markdown softbreak node
 // Note: not used currently
 type Softbreak struct {
