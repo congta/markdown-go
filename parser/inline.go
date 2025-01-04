@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/gomarkdown/markdown/ast"
+	"congta.com/qunmus/markdown/ast"
 )
 
 // Parsing of inline elements

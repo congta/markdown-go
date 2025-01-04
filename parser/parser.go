@@ -5,11 +5,10 @@ package parser
 
 import (
 	"bytes"
+	"congta.com/qunmus/markdown/ast"
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/gomarkdown/markdown/ast"
 )
 
 // Extensions is a bitmask of enabled parser extensions.
@@ -229,8 +228,10 @@ func canNodeContain(n ast.Node, v ast.Node) bool {
 	switch n.(type) {
 	case *ast.List:
 		return isListItem(v)
-	case *ast.Document, *ast.BlockQuote, *ast.Aside, *ast.ListItem, *ast.CaptionFigure:
+	case *ast.Document, *ast.BlockQuote, *ast.Sparrow, *ast.Aside, *ast.ListItem, *ast.CaptionFigure:
 		return !isListItem(v)
+	case *ast.Division:
+		return true // division can contain everything
 	case *ast.Table:
 		switch v.(type) {
 		case *ast.TableHeader, *ast.TableBody, *ast.TableFooter:

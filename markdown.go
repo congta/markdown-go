@@ -2,11 +2,10 @@ package markdown
 
 import (
 	"bytes"
+	"congta.com/qunmus/markdown/ast"
+	"congta.com/qunmus/markdown/html"
+	"congta.com/qunmus/markdown/parser"
 	"io"
-
-	"github.com/gomarkdown/markdown/ast"
-	"github.com/gomarkdown/markdown/html"
-	"github.com/gomarkdown/markdown/parser"
 )
 
 // Renderer is an interface for implementing custom renderers.
@@ -81,6 +80,7 @@ func ToHTML(markdown []byte, p *parser.Parser, renderer Renderer) []byte {
 		}
 		renderer = html.NewRenderer(opts)
 	}
+	// ast.Print(os.Stdout, doc)
 	return Render(doc, renderer)
 }
 

@@ -2,9 +2,8 @@ package html
 
 import (
 	"bytes"
+	"congta.com/qunmus/markdown/parser"
 	"io"
-
-	"github.com/gomarkdown/markdown/parser"
 )
 
 // SmartyPants rendering

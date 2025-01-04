@@ -1,8 +1,6 @@
 package parser
 
-import (
-	"github.com/gomarkdown/markdown/ast"
-)
+import "congta.com/qunmus/markdown/ast"
 
 // Flags control optional behavior of parser.
 type Flags int

@@ -1,6 +1,6 @@
 package parser
 
-import "github.com/gomarkdown/markdown/ast"
+import "congta.com/qunmus/markdown/ast"
 
 // check if the specified position is preceded by an odd number of backslashes
 func isBackslashEscaped(data []byte, i int) bool {
@@ -120,6 +120,8 @@ func (p *Parser) tableHeader(data []byte, doRender bool) (size int, columns []as
 	colCount := 1
 	headerIsUnderline := true
 	headerIsWithEmptyFields := true
+	hasOuterBorder := false
+	hasInnerBorder := false
 	for i = 0; i < len(data) && data[i] != '\n'; i++ {
 		// If we are in a codespan we should discount any | we see, check for that here and skip ahead.
 		if isCode, _ := codeSpan(p, data[i:], 0); isCode > 0 {
@@ -149,6 +151,7 @@ func (p *Parser) tableHeader(data []byte, doRender bool) (size int, columns []as
 	// column count ignores pipes at beginning or end of line
 	if data[0] == '|' {
 		colCount--
+		hasInnerBorder = true
 	}
 	{
 		tmp := header
@@ -164,6 +167,7 @@ func (p *Parser) tableHeader(data []byte, doRender bool) (size int, columns []as
 		n := len(tmp)
 		if n > 2 && tmp[n-1] == '|' && !isBackslashEscaped(tmp, n-1) {
 			colCount--
+			hasOuterBorder = true
 		}
 	}
 
@@ -253,6 +257,15 @@ func (p *Parser) tableHeader(data []byte, doRender bool) (size int, columns []as
 
 	if doRender {
 		table = &ast.Table{}
+		if !hasOuterBorder || !hasInnerBorder {
+			if !hasOuterBorder {
+				p.AddClass("coma-borderless-o")
+			}
+			if !hasInnerBorder {
+				p.AddClass("coma-borderless-i")
+			}
+		}
+
 		p.AddBlock(table)
 		if header != nil {
 			p.AddBlock(&ast.TableHeader{})
