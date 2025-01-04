@@ -2,8 +2,7 @@ package parser
 
 import (
 	"bytes"
-
-	"github.com/gomarkdown/markdown/ast"
+	"congta.com/qunmus/markdown/ast"
 )
 
 // citation parses a citation. In its most simple form [@ref], we allow multiple

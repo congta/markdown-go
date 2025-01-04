@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/gomarkdown/markdown/ast"
+	"congta.com/qunmus/markdown/ast"
 )
 
 // Parsing of inline elements
@@ -362,27 +362,25 @@ func link(p *Parser, data []byte, offset int) (int, ast.Node) {
 		linkB := i
 		brace := 0
 
-		var c byte
 		// look for link end: ' " )
 	findlinkend:
 		for i < len(data) {
-			c = data[i]
 			switch {
-			case c == '\\':
+			case data[i] == '\\':
 				i += 2
 
-			case c == '(':
+			case data[i] == '(':
 				brace++
 				i++
 
-			case c == ')':
+			case data[i] == ')':
 				if brace <= 0 {
 					break findlinkend
 				}
 				brace--
 				i++
 
-			case c == '\'' || c == '"':
+			case data[i] == '\'' || data[i] == '"':
 				break findlinkend
 
 			default:
@@ -404,15 +402,14 @@ func link(p *Parser, data []byte, offset int) (int, ast.Node) {
 
 		findtitleend:
 			for i < len(data) {
-				c = data[i]
 				switch {
-				case c == '\\':
+				case data[i] == '\\':
 					i++
 
-				case c == data[titleB-1]: // matching title delimiter
+				case data[i] == data[titleB-1]: // matching title delimiter
 					titleEndCharFound = true
 
-				case titleEndCharFound && c == ')':
+				case titleEndCharFound && data[i] == ')':
 					break findtitleend
 				}
 				i++
@@ -739,7 +736,7 @@ func leftAngle(p *Parser, data []byte, offset int) (int, ast.Node) {
 }
 
 // '\\' backslash escape
-var EscapeChars = []byte("\\`*_{}[]()#+-.!:|&<>~^$")
+var escapeChars = []byte("\\`*_{}[]()#+-.!:|&<>~^")
 
 func escape(p *Parser, data []byte, offset int) (int, ast.Node) {
 	data = data[offset:]
@@ -756,7 +753,7 @@ func escape(p *Parser, data []byte, offset int) (int, ast.Node) {
 		return 2, &ast.Hardbreak{}
 	}
 
-	if bytes.IndexByte(EscapeChars, data[1]) < 0 {
+	if bytes.IndexByte(escapeChars, data[1]) < 0 {
 		return 0, nil
 	}
 
@@ -1188,30 +1185,30 @@ func helperFindEmphChar(data []byte, c byte) int {
 func helperEmphasis(p *Parser, data []byte, c byte) (int, ast.Node) {
 	i := 0
 
-	// skip two symbol if coming from emph3, as it detected a double emphasis case
+	// skip one symbol if coming from emph3
 	if len(data) > 1 && data[0] == c && data[1] == c {
-		i = 2
+		i = 1
 	}
 
 	for i < len(data) {
 		length := helperFindEmphChar(data[i:], c)
+		if length == 0 {
+			return 0, nil
+		}
 		i += length
 		if i >= len(data) {
 			return 0, nil
 		}
 
 		if i+1 < len(data) && data[i+1] == c {
-			i += 2
+			i++
 			continue
 		}
 
 		if data[i] == c && !IsSpace(data[i-1]) {
+
 			if p.extensions&NoIntraEmphasis != 0 {
-				rest := data[i+1:]
-				if !(len(rest) == 0 || IsSpace(rest[0]) || IsPunctuation2(rest)) {
-					if length == 0 {
-						return 0, nil
-					}
+				if !(i+1 == len(data) || IsSpace(data[i+1]) || IsPunctuation(data[i+1])) {
 					continue
 				}
 			}
@@ -1219,11 +1216,6 @@ func helperEmphasis(p *Parser, data []byte, c byte) (int, ast.Node) {
 			emph := &ast.Emph{}
 			p.Inline(emph, data[:i])
 			return i + 1, emph
-		}
-
-		// We have to check this at the end, otherwise the scenario where we find repeated c's will get skipped
-		if length == 0 {
-			return 0, nil
 		}
 	}
 

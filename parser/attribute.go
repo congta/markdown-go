@@ -2,8 +2,8 @@ package parser
 
 import (
 	"bytes"
-
-	"github.com/gomarkdown/markdown/ast"
+	"congta.com/qunmus/markdown/ast"
+	"strings"
 )
 
 // attribute parses a (potential) block attribute and adds it to p.
@@ -20,6 +20,10 @@ func (p *Parser) attribute(data []byte) []byte {
 	// last character must be a } otherwise it's not an attribute
 	end := skipUntilChar(data, i, '\n')
 	if data[end-1] != '}' {
+		return data
+	}
+	// must have only one }
+	if skipUntilChar(data, i, '}') != end-1 {
 		return data
 	}
 
@@ -43,7 +47,7 @@ Loop:
 			}
 			switch {
 			case chunk[0] == '.':
-				b.Classes = append(b.Classes, chunk[1:])
+				b.Classes = append(b.Classes, AutoConvertClass(chunk[1:]))
 			case chunk[0] == '#':
 				b.ID = chunk[1:]
 			default:
@@ -75,7 +79,7 @@ Loop:
 			}
 			switch {
 			case chunk[0] == '.':
-				b.Classes = append(b.Classes, chunk[1:])
+				b.Classes = append(b.Classes, AutoConvertClass(chunk[1:]))
 			case chunk[0] == '#':
 				b.ID = chunk[1:]
 			default:
@@ -95,6 +99,39 @@ Loop:
 
 	p.attr = b
 	return data[i:]
+}
+
+func AutoConvertClass(b []byte) []byte {
+	class := AutoConvertStringClass(string(b))
+	return []byte(class)
+}
+
+// AutoConvertStringClass not valid chars: " \ { } . #
+func AutoConvertStringClass(class string) string {
+	if strings.EqualFold(class, "1/1") {
+		return "layui-col-xs12"
+	} else if strings.EqualFold(class, "1/2") {
+		return "layui-col-xs6"
+	} else if strings.EqualFold(class, "1/3") {
+		return "layui-col-xs4"
+	} else if strings.EqualFold(class, "1/4") {
+		return "layui-col-xs3"
+	} else if strings.EqualFold(class, "1/6") {
+		return "layui-col-xs2"
+	} else if strings.EqualFold(class, "<->") { // todo(zhangfucheng) 待定
+		return "flex-1"
+	} else if strings.EqualFold(class, "!red") {
+		return "ca-alert ca-alert-danger"
+	} else if strings.EqualFold(class, "!yellow") {
+		return "ca-alert ca-alert-warning"
+	} else if strings.EqualFold(class, "!blue") {
+		return "ca-alert ca-alert-primary"
+	} else if strings.EqualFold(class, "!green") {
+		return "ca-alert ca-alert-success"
+	} else if strings.EqualFold(class, "!grey") || strings.EqualFold(class, "!gray") {
+		return "ca-alert"
+	}
+	return class
 }
 
 // key="value" quotes are mandatory.
