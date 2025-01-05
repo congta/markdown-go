@@ -73,6 +73,100 @@ func TestIsFenceLine(t *testing.T) {
 	}
 }
 
+func TestIsVesselLine(t *testing.T) {
+	tests := []struct {
+		data       []byte
+		wantEnd    int
+		wantMarker string
+		wantName   string
+		wantAnno   string
+		wantDesc   string
+	}{
+		{
+			data:       []byte(":::"),
+			wantEnd:    3,
+			wantMarker: ":::",
+		},
+		{
+			data:    []byte("stuff here\n```\n"),
+			wantEnd: 0,
+		},
+		{
+			data:       []byte("::: details\nstuff here\n"),
+			wantEnd:    len("::: details") + 1,
+			wantMarker: ":::",
+			wantName:   "details",
+		},
+		{
+			data:       []byte("::: details @anno message\nstuff here\n"),
+			wantEnd:    len("::: details @anno message") + 1,
+			wantMarker: ":::",
+			wantName:   "details",
+			wantAnno:   "anno",
+			wantDesc:   "message",
+		},
+		{
+			data:       []byte("::: details anno@message\nstuff here\n"),
+			wantEnd:    len("::: details anno@message") + 1,
+			wantMarker: ":::",
+			wantName:   "details",
+			wantAnno:   "anno",
+			wantDesc:   "message",
+		},
+		{
+			data:       []byte("::: details anno@\nstuff here\n"),
+			wantEnd:    len("::: details anno@") + 1,
+			wantMarker: ":::",
+			wantName:   "details",
+			wantAnno:   "anno",
+			wantDesc:   "",
+		},
+		{
+			data:       []byte("::: details @anno\nstuff here\n"),
+			wantEnd:    len("::: details @anno") + 1,
+			wantMarker: ":::",
+			wantName:   "details",
+			wantAnno:   "anno",
+			wantDesc:   "",
+		},
+		{
+			data:       []byte("::: details message\nstuff here\n"),
+			wantEnd:    len("::: details message") + 1,
+			wantMarker: ":::",
+			wantName:   "details",
+			wantDesc:   "message",
+		},
+		{
+			data:       []byte("::: @anno\nstuff here\n"),
+			wantEnd:    len("::: @anno") + 1,
+			wantMarker: ":::",
+			wantName:   "@anno",
+		},
+	}
+
+	for _, test := range tests {
+		name := ""
+		anno := ""
+		desc := ""
+		end, marker := isVesselLine(test.data, &name, &anno, &desc, "")
+		if got, want := end, test.wantEnd; got != want {
+			t.Errorf("got end %v, want %v", got, want)
+		}
+		if got, want := marker, test.wantMarker; got != want {
+			t.Errorf("got marker %v, want %v", got, want)
+		}
+		if got, want := name, test.wantName; got != want {
+			t.Errorf("got name %v, want %v", got, want)
+		}
+		if got, want := anno, test.wantAnno; got != want {
+			t.Errorf("got anno %v, want %v", got, want)
+		}
+		if got, want := desc, test.wantDesc; got != want {
+			t.Errorf("got desc %v, want %v", got, want)
+		}
+	}
+}
+
 func TestSanitizedAnchorName(t *testing.T) {
 	tests := []string{
 		"This is a header",

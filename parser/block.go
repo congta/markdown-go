@@ -867,10 +867,10 @@ func isHRule(data []byte) bool {
 	return n >= 3
 }
 
-// isVesselLine checks if there's a sparrow line (e.g., '::: name' or '::: name desc') at the beginning of data,
+// isVesselLine checks if there's a sparrow line (e.g., '::: name [@anno]' or '::: name [@anno] desc') at the beginning of data,
 // and returns the end index if so, or 0 otherwise. It also returns the marker found.
 // If syntax is not nil, it gets set to the syntax specified in the fence line.
-func isVesselLine(data []byte, name, desc *string, oldmarker string) (end int, marker string) {
+func isVesselLine(data []byte, name, anno, desc *string, oldmarker string) (end int, marker string) {
 	i, size := 0, 0
 
 	n := len(data)
@@ -916,33 +916,46 @@ func isVesselLine(data []byte, name, desc *string, oldmarker string) (end int, m
 			return 0, ""
 		}
 
-		nameStart, nameLen := syntaxRange(data, &i)
-		if nameStart == 0 && nameLen == 0 {
-			return 0, ""
-		}
-
-		// caller wants the syntax
-		if name != nil {
-			*name = string(data[nameStart : nameStart+nameLen])
+		partStart := i
+		i = skipUntilSpace(data, i)
+		if partStart != i && name != nil {
+			*name = string(data[partStart:i])
 		}
 
 		i = skipChar(data, i, ' ')
-		if i >= n {
-			if i == n {
-				return i, marker
+		partStart = i
+		if i < n && data[i] == '@' {
+			// @anno desc
+			i = skipUntilSpace(data, i)
+			if partStart+1 != i && anno != nil { // +1 to skip '@'
+				*anno = string(data[partStart+1 : i])
 			}
-			return 0, ""
-		}
 
-		descStart := i
-		for i < n && data[i] != '\n' {
-			i++
-		}
-		descLen := i - descStart
-		if descStart != 0 || descLen != 0 {
-			// caller wants the syntax
-			if desc != nil {
-				*desc = string(data[descStart : descStart+descLen])
+			i = skipChar(data, i, ' ')
+			partStart = i
+			i = skipUntilChar(data, i, '\n')
+			if partStart != i && desc != nil {
+				*desc = string(data[partStart:i])
+			}
+		} else {
+			// desc or anno@desc
+			i = skipUntilChar(data, i, '\n')
+			idx := partStart
+			for idx < i && data[idx] != '@' {
+				idx++
+			}
+			if idx < i {
+				if anno != nil {
+					*anno = string(data[partStart:idx])
+				}
+				idx = skipChar(data, idx, ' ')
+				if desc != nil {
+					*desc = string(data[idx+1 : i])
+				}
+			} else {
+				if desc != nil {
+					*desc = string(data[partStart:i])
+				}
 			}
 		}
 	}
@@ -1058,7 +1071,7 @@ func syntaxRange(data []byte, iout *int) (int, int) {
 
 		i++
 	} else {
-		for i < n && IsSpace(data[i]) {
+		for i < n && data[i] != '\n' {
 			syn++
 			i++
 		}
@@ -1147,8 +1160,8 @@ func (p *Parser) fencedCodeBlock(data []byte, doRender bool) int {
 // or 0 otherwise. It writes to out if doRender is true, otherwise it has no side effects.
 // If doRender is true, a final newline is mandatory to recognize the sparrow block.
 func (p *Parser) vesselBlock(data []byte, doRender bool) int {
-	var name, desc string
-	beg, marker := isVesselLine(data, &name, &desc, "")
+	var name, anno, desc string
+	beg, marker := isVesselLine(data, &name, &anno, &desc, "")
 	if beg == 0 || beg >= len(data) {
 		return 0
 	}
@@ -1159,7 +1172,7 @@ func (p *Parser) vesselBlock(data []byte, doRender bool) int {
 		// safe to assume beg < len(data)
 
 		// check for the end of the code block
-		fenceEnd, _ := isVesselLine(data[beg:], nil, nil, marker)
+		fenceEnd, _ := isVesselLine(data[beg:], nil, nil, nil, marker)
 		if fenceEnd != 0 {
 			beg += fenceEnd
 			break
@@ -1182,8 +1195,9 @@ func (p *Parser) vesselBlock(data []byte, doRender bool) int {
 
 	if doRender {
 		sparrow := &ast.Vessel{
-			Name: name,
-			Desc: desc,
+			Name:       name,
+			Annotation: anno,
+			Desc:       desc,
 		}
 		if p.extensions&Mmark == 0 {
 			block := p.AddBlock(sparrow)
@@ -2216,6 +2230,15 @@ func skipAlnum(data []byte, i int) int {
 func skipSpace(data []byte, i int) int {
 	n := len(data)
 	for i < n && IsSpace(data[i]) {
+		i++
+	}
+	return i
+}
+
+// skipUntilSpace advances i as long as !IsSpace(data[i])
+func skipUntilSpace(data []byte, i int) int {
+	n := len(data)
+	for i < n && !IsSpace(data[i]) {
 		i++
 	}
 	return i

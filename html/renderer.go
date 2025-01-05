@@ -3,16 +3,14 @@ package html
 import (
 	"bytes"
 	"fmt"
+	"github.com/gomarkdown/markdown/ast"
+	"github.com/gomarkdown/markdown/parser"
 	"html"
 	"io"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"unicode/utf8"
-
-	"github.com/gomarkdown/markdown/ast"
-	"github.com/gomarkdown/markdown/parser"
 )
 
 // Flags control optional behavior of HTML renderer.
@@ -442,16 +440,18 @@ func (r *Renderer) NonBlockingSpace(w io.Writer, node *ast.NonBlockingSpace) {
 
 // Vessel writes ast.Sparrow node
 func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
-	desc := vessel.Desc
-	anno := "default"
-	if strings.Contains(desc, "@") {
-		idx := strings.Index(desc, "@")
-		anno = desc[:idx]
-		desc = strings.TrimSpace(desc[idx+1:])
+	name := vessel.Name
+	if name == "" {
+		name = "default"
 	}
+	anno := vessel.Annotation
+	if anno == "" {
+		anno = "default"
+	}
+	desc := vessel.Desc
 	if entering {
 		r.CR(w)
-		switch vessel.Name {
+		switch name {
 		case "grey", "gray":
 			fallthrough
 		case "note", "notice", "primary", "blue":
@@ -462,13 +462,13 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 			fallthrough
 		case "error", "danger", "red":
 			AddClass(vessel, "coma-alert")
-			AddClass(vessel, "coma-alert-"+vessel.Name)
+			AddClass(vessel, "coma-alert-"+name)
 			AddClass(vessel, "coma-anno-"+anno)
 			r.Outs(w, TagWithAttributes("<div", BlockAttrs(vessel)))
 		case "tip":
 			r.Outs(w, fmt.Sprintf(`<div class="coma-vessel coma-vessel-%s coma-anno-%s">
 <p class="coma-vessel-title">%s</p>
-<div class="coma-vessel-body">`, vessel.Name, anno, desc))
+<div class="coma-vessel-body">`, name, anno, desc))
 		case "poetry":
 			parts := strings.Split(desc, " ")
 			author := ""
@@ -492,10 +492,10 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 			r.Outs(w, fmt.Sprintf(`<div class="coma-collapse coma-vessel-%s coma-anno-%s">
 <div class="coma-colla-item">
 <div class="coma-colla-title">%s</div>
-<div class="coma-colla-content">`, vessel.Name, anno, desc))
+<div class="coma-colla-content">`, name, anno, desc))
 		}
 	} else {
-		switch vessel.Name {
+		switch name {
 		case "grey", "gray":
 			fallthrough
 		case "note", "notice", "primary", "blue":
@@ -685,20 +685,20 @@ func (r *Renderer) Paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
 
 // Code writes ast.Code node
 func (r *Renderer) Code(w io.Writer, node *ast.Code) {
-	annotation := []byte("default")
+	annotation := []byte("")
 	literal := node.Literal
-	if idx := bytes.IndexByte(literal, '@'); idx > 0 && idx < len(literal)-1 {
-		isASCII := true
-		annotation = literal[:idx]
-		for _, b := range annotation {
-			if b >= utf8.RuneSelf {
-				isASCII = false
-				break
-			}
+	idx := bytes.IndexByte(literal, '@')
+	if idx == 0 && bytes.ContainsAny(literal, " \t") {
+		for idx < len(literal) && literal[idx] != ' ' && literal[idx] != '\t' {
+			idx++
 		}
-		if isASCII {
+		if idx < len(literal)-1 {
+			annotation = literal[1:idx]
 			literal = literal[idx+1:]
 		}
+	} else if idx > 0 && idx < len(literal)-1 {
+		annotation = literal[:idx]
+		literal = literal[idx+1:]
 	}
 
 	if len(annotation) > 0 {

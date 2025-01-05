@@ -332,8 +332,9 @@ type Division struct {
 type Vessel struct {
 	Container
 
-	Name string
-	Desc string
+	Name       string
+	Annotation string
+	Desc       string
 }
 
 // Softbreak represents markdown softbreak node
