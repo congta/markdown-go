@@ -1058,7 +1058,7 @@ func syntaxRange(data []byte, iout *int) (int, int) {
 
 		i++
 	} else {
-		for i < n && data[i] != '\n' {
+		for i < n && IsSpace(data[i]) {
 			syn++
 			i++
 		}

@@ -461,8 +461,8 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 		case "warning", "warn", "yellow":
 			fallthrough
 		case "error", "danger", "red":
-			AddClass(vessel, "ca-alert")
-			AddClass(vessel, "ca-alert-"+vessel.Name)
+			AddClass(vessel, "coma-alert")
+			AddClass(vessel, "coma-alert-"+vessel.Name)
 			AddClass(vessel, "coma-anno-"+anno)
 			r.Outs(w, TagWithAttributes("<div", BlockAttrs(vessel)))
 		case "tip":
@@ -489,10 +489,10 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 			}
 			fallthrough
 		default:
-			r.Outs(w, fmt.Sprintf(`<div class="layui-collapse coma-vessel-%s coma-anno-%s">
-<div class="layui-colla-item">
-<div class="layui-colla-title">%s</div>
-<div class="layui-colla-content">`, vessel.Name, anno, desc))
+			r.Outs(w, fmt.Sprintf(`<div class="coma-collapse coma-vessel-%s coma-anno-%s">
+<div class="coma-colla-item">
+<div class="coma-colla-title">%s</div>
+<div class="coma-colla-content">`, vessel.Name, anno, desc))
 		}
 	} else {
 		switch vessel.Name {
