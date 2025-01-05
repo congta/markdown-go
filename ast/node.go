@@ -1,6 +1,6 @@
 package ast
 
-// An attribute can be attached to block elements. They are specified as
+// Attribute An attribute can be attached to block elements. They are specified as
 // {#id .classs key="value"} where quotes for values are mandatory, multiple
 // key/value pairs are separated by whitespace.
 type Attribute struct {
@@ -92,7 +92,7 @@ type Container struct {
 	*Attribute // Block level attribute
 }
 
-// return true if can contain children of a given node type
+// CanContain return true if can contain children of a given node type
 // used by custom nodes to over-ride logic in canNodeContain
 type CanContain interface {
 	CanContain(Node) bool
@@ -321,6 +321,19 @@ type CodeBlock struct {
 	FenceChar   byte
 	FenceLength int
 	FenceOffset int
+}
+
+// Division parent div of multiple blocks
+type Division struct {
+	Container
+}
+
+// Vessel represents markdown custom container block node (rename to vessel due to Container is already used)
+type Vessel struct {
+	Container
+
+	Name string
+	Desc string
 }
 
 // Softbreak represents markdown softbreak node

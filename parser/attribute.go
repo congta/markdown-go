@@ -2,7 +2,6 @@ package parser
 
 import (
 	"bytes"
-
 	"github.com/gomarkdown/markdown/ast"
 )
 
@@ -20,6 +19,11 @@ func (p *Parser) attribute(data []byte) []byte {
 	// last character must be a } otherwise it's not an attribute
 	end := skipUntilChar(data, i, '\n')
 	if data[end-1] != '}' {
+		return data
+	}
+
+	// must have only one }, for ast.Division
+	if skipUntilChar(data, i, '}') != end-1 {
 		return data
 	}
 
@@ -43,7 +47,7 @@ Loop:
 			}
 			switch {
 			case chunk[0] == '.':
-				b.Classes = append(b.Classes, chunk[1:])
+				b.Classes = append(b.Classes, AutoConvertClass(chunk[1:]))
 			case chunk[0] == '#':
 				b.ID = chunk[1:]
 			default:
@@ -75,7 +79,7 @@ Loop:
 			}
 			switch {
 			case chunk[0] == '.':
-				b.Classes = append(b.Classes, chunk[1:])
+				b.Classes = append(b.Classes, AutoConvertClass(chunk[1:]))
 			case chunk[0] == '#':
 				b.ID = chunk[1:]
 			default:
@@ -113,4 +117,15 @@ func keyValue(data []byte) ([]byte, []byte) {
 		return key, nil
 	}
 	return key, value[1 : len(value)-1]
+}
+
+func AutoConvertClass(b []byte) []byte {
+	class := AutoConvertStringClass(string(b))
+	return []byte(class)
+}
+
+// AutoConvertStringClass not valid chars: " \ { } . #
+func AutoConvertStringClass(class string) string {
+	// TODO add abbreviate class names
+	return class
 }

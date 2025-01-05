@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gomarkdown/markdown/ast"
 	"github.com/gomarkdown/markdown/parser"
@@ -439,6 +440,83 @@ func (r *Renderer) NonBlockingSpace(w io.Writer, node *ast.NonBlockingSpace) {
 	r.Outs(w, "&nbsp;")
 }
 
+// Vessel writes ast.Sparrow node
+func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
+	desc := vessel.Desc
+	anno := "default"
+	if strings.Contains(desc, "@") {
+		idx := strings.Index(desc, "@")
+		anno = desc[:idx]
+		desc = strings.TrimSpace(desc[idx+1:])
+	}
+	if entering {
+		r.CR(w)
+		switch vessel.Name {
+		case "grey", "gray":
+			fallthrough
+		case "note", "notice", "primary", "blue":
+			fallthrough
+		case "info", "success", "green":
+			fallthrough
+		case "warning", "warn", "yellow":
+			fallthrough
+		case "error", "danger", "red":
+			AddClass(vessel, "ca-alert")
+			AddClass(vessel, "ca-alert-"+vessel.Name)
+			AddClass(vessel, "coma-anno-"+anno)
+			r.Outs(w, TagWithAttributes("<div", BlockAttrs(vessel)))
+		case "tip":
+			r.Outs(w, fmt.Sprintf(`<div class="coma-vessel coma-vessel-%s coma-anno-%s">
+<p class="coma-vessel-title">%s</p>
+<div class="coma-vessel-body">`, vessel.Name, anno, desc))
+		case "poetry":
+			parts := strings.Split(desc, " ")
+			author := ""
+			if len(parts) > 1 {
+				author = parts[1]
+			}
+			AddClass(vessel, "coma-poetry")
+			AddClass(vessel, "coma-anno-"+anno)
+			tag := TagWithAttributes("<div", BlockAttrs(vessel))
+			if parts[0] != "" {
+				r.Outs(w, tag+fmt.Sprintf(`<h2>%s<span class="coma-meta coma-small">%s</span></h2>`, parts[0], author))
+			} else {
+				r.Outs(w, tag)
+			}
+		case "details":
+			if desc == "" {
+				desc = "查看"
+			}
+			fallthrough
+		default:
+			r.Outs(w, fmt.Sprintf(`<div class="layui-collapse coma-vessel-%s coma-anno-%s">
+<div class="layui-colla-item">
+<div class="layui-colla-title">%s</div>
+<div class="layui-colla-content">`, vessel.Name, anno, desc))
+		}
+	} else {
+		switch vessel.Name {
+		case "grey", "gray":
+			fallthrough
+		case "note", "notice", "primary", "blue":
+			fallthrough
+		case "info", "success", "green":
+			fallthrough
+		case "warning", "warn", "yellow":
+			fallthrough
+		case "error", "danger", "red":
+			r.Outs(w, "</div>")
+		case "tip":
+			r.Outs(w, "</div></div>")
+		case "poetry":
+			r.Outs(w, "</div>")
+		default:
+			r.Outs(w, "</div></div></div>")
+		}
+		r.CR(w)
+	}
+}
+
 // OutOneOf writes first or second depending on outFirst
 func (r *Renderer) OutOneOf(w io.Writer, outFirst bool, first string, second string) {
 	if outFirst {
@@ -607,8 +685,29 @@ func (r *Renderer) Paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
 
 // Code writes ast.Code node
 func (r *Renderer) Code(w io.Writer, node *ast.Code) {
-	r.Outs(w, "<code>")
-	EscapeHTML(w, node.Literal)
+	annotation := []byte("default")
+	literal := node.Literal
+	if idx := bytes.IndexByte(literal, '@'); idx > 0 && idx < len(literal)-1 {
+		isASCII := true
+		annotation = literal[:idx]
+		for _, b := range annotation {
+			if b >= utf8.RuneSelf {
+				isASCII = false
+				break
+			}
+		}
+		if isASCII {
+			literal = literal[idx+1:]
+		}
+	}
+
+	if len(annotation) > 0 {
+		r.Outs(w, fmt.Sprintf("<code class=\"coma-anno-%s\">", string(annotation)))
+	} else {
+		r.Outs(w, "<code>")
+	}
+
+	EscapeHTML(w, literal)
 	r.Outs(w, "</code>")
 }
 
@@ -1028,6 +1127,11 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.BlockQuote:
 		tag := TagWithAttributes("<blockquote", BlockAttrs(node))
 		r.OutOneOfCr(w, entering, tag, "</blockquote>")
+	case *ast.Vessel:
+		r.Vessel(w, node, entering)
+	case *ast.Division:
+		tag := TagWithAttributes("<div", BlockAttrs(node))
+		r.OutOneOfCr(w, entering, tag, "</div>")
 	case *ast.Aside:
 		tag := TagWithAttributes("<aside", BlockAttrs(node))
 		r.OutOneOfCr(w, entering, tag, "</aside>")
@@ -1234,7 +1338,7 @@ func (r *Renderer) writeTOC(w io.Writer, doc ast.Node) {
 	}
 
 	if buf.Len() > 0 {
-		io.WriteString(w, "<nav>\n")
+		io.WriteString(w, `<nav id="coma-toc">`)
 		w.Write(buf.Bytes())
 		io.WriteString(w, "\n\n</nav>\n")
 	}
@@ -1296,6 +1400,23 @@ func Slugify(in []byte) []byte {
 		}
 	}
 	return out[a : b+1]
+}
+
+func AddClass(node ast.Node, class string) {
+	var attr *ast.Attribute
+	if c := node.AsContainer(); c != nil {
+		if c.Attribute == nil {
+			c.Attribute = &ast.Attribute{}
+		}
+		attr = c.Attribute
+	}
+	if l := node.AsLeaf(); l != nil {
+		if l.Attribute == nil {
+			l.Attribute = &ast.Attribute{}
+		}
+		attr = l.Attribute
+	}
+	attr.Classes = append(attr.Classes, []byte(class))
 }
 
 // BlockAttrs takes a node and checks if it has block level attributes set. If so it

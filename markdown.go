@@ -81,6 +81,7 @@ func ToHTML(markdown []byte, p *parser.Parser, renderer Renderer) []byte {
 		}
 		renderer = html.NewRenderer(opts)
 	}
+	// ast.Print(os.Stdout, doc)
 	return Render(doc, renderer)
 }
 
