@@ -442,15 +442,18 @@ func (r *Renderer) NonBlockingSpace(w io.Writer, node *ast.NonBlockingSpace) {
 func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 	name := vessel.Name
 	if name == "" {
-		name = "default"
+		name = "details"
 	}
 	anno := vessel.Annotation
 	if anno == "" {
-		anno = "default"
+		anno = ""
 	}
 	desc := vessel.Desc
 	if entering {
 		r.CR(w)
+		if anno != "" {
+			AddClass(vessel, "coma-anno-"+anno)
+		}
 		switch name {
 		case "grey", "gray":
 			fallthrough
@@ -463,23 +466,22 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 		case "error", "danger", "red":
 			AddClass(vessel, "coma-alert")
 			AddClass(vessel, "coma-alert-"+name)
-			AddClass(vessel, "coma-anno-"+anno)
 			r.Outs(w, TagWithAttributes("<div", BlockAttrs(vessel)))
 		case "tip":
-			r.Outs(w, fmt.Sprintf(`<div class="coma-vessel coma-vessel-%s coma-anno-%s">
-<p class="coma-vessel-title">%s</p>
-<div class="coma-vessel-body">`, name, anno, desc))
+			AddClass(vessel, "coma-vessel")
+			AddClass(vessel, "coma-vessel-"+name)
+			tag := TagWithAttributes("<div", BlockAttrs(vessel))
+			r.Outs(w, tag+fmt.Sprintf(`<p class="coma-vessel-title">%s</p><div class="coma-vessel-body">`, desc))
 		case "poetry":
 			parts := strings.Split(desc, " ")
-			author := ""
+			subtitle := ""
 			if len(parts) > 1 {
-				author = parts[1]
+				subtitle = parts[1]
 			}
 			AddClass(vessel, "coma-poetry")
-			AddClass(vessel, "coma-anno-"+anno)
 			tag := TagWithAttributes("<div", BlockAttrs(vessel))
 			if parts[0] != "" {
-				r.Outs(w, tag+fmt.Sprintf(`<h2>%s<span class="coma-meta coma-small">%s</span></h2>`, parts[0], author))
+				r.Outs(w, tag+fmt.Sprintf(`<h2>%s<span class="coma-poetry-subtitle">%s</span></h2>`, parts[0], subtitle))
 			} else {
 				r.Outs(w, tag)
 			}
@@ -489,10 +491,12 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 			}
 			fallthrough
 		default:
-			r.Outs(w, fmt.Sprintf(`<div class="coma-collapse coma-vessel-%s coma-anno-%s">
-<div class="coma-colla-item">
+			AddClass(vessel, "coma-collapse")
+			AddClass(vessel, "coma-vessel-"+name)
+			tag := TagWithAttributes("<div", BlockAttrs(vessel))
+			r.Outs(w, tag+fmt.Sprintf(`<div class="coma-colla-item">
 <div class="coma-colla-title">%s</div>
-<div class="coma-colla-content">`, name, anno, desc))
+<div class="coma-colla-content">`, desc))
 		}
 	} else {
 		switch name {
