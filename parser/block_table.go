@@ -151,7 +151,7 @@ func (p *Parser) tableHeader(data []byte, doRender bool) (size int, columns []as
 	// column count ignores pipes at beginning or end of line
 	if data[0] == '|' {
 		colCount--
-		hasInnerBorder = true
+		hasOuterBorder = true
 	}
 	{
 		tmp := header
@@ -167,7 +167,7 @@ func (p *Parser) tableHeader(data []byte, doRender bool) (size int, columns []as
 		n := len(tmp)
 		if n > 2 && tmp[n-1] == '|' && !isBackslashEscaped(tmp, n-1) {
 			colCount--
-			hasOuterBorder = true
+			hasInnerBorder = true
 		}
 	}
 

@@ -280,7 +280,7 @@ func (p *Parser) Block(data []byte) {
 			hr := ast.HorizontalRule{}
 			hr.Literal = bytes.Trim(data[:i], " \n")
 			if len(hr.Literal) == 3 {
-				p.AddClass("short")
+				p.AddClass("coma-short")
 			}
 			p.AddBlock(&hr)
 			data = data[i:]
@@ -1998,15 +1998,15 @@ func (p *Parser) renderParagraph(data []byte) {
 	para := &ast.Paragraph{}
 	para.Content = data[beg:end]
 	if bytes.HasPrefix(para.Content, []byte("|->")) || bytes.HasPrefix(para.Content, []byte(":->")) {
-		p.AddClass("right")
+		p.AddClass("coma-right")
 		beg = skipChar(para.Content, 3, ' ')
 		para.Content = para.Content[beg:]
 	} else if bytes.HasPrefix(para.Content, []byte("<-|->")) || bytes.HasPrefix(para.Content, []byte("<-:->")) {
-		p.AddClass("justify")
+		p.AddClass("coma-justify")
 		beg = skipChar(para.Content, 5, ' ')
 		para.Content = para.Content[beg:]
 	} else if bytes.HasPrefix(para.Content, []byte("->|<-")) || bytes.HasPrefix(para.Content, []byte("->:<-")) {
-		p.AddClass("center")
+		p.AddClass("coma-center")
 		beg = skipChar(para.Content, 5, ' ')
 		para.Content = para.Content[beg:]
 	}

@@ -445,9 +445,6 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 		name = "details"
 	}
 	anno := vessel.Annotation
-	if anno == "" {
-		anno = ""
-	}
 	desc := vessel.Desc
 	if entering {
 		r.CR(w)
@@ -455,23 +452,19 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 			AddClass(vessel, "coma-anno-"+anno)
 		}
 		switch name {
-		case "grey", "gray":
+		case "grey", "gray", "tip":
 			fallthrough
-		case "note", "notice", "primary", "blue":
+		case "note", "blue":
 			fallthrough
-		case "info", "success", "green":
+		case "success", "green":
 			fallthrough
 		case "warning", "warn", "yellow":
 			fallthrough
-		case "error", "danger", "red":
+		case "danger", "red":
 			AddClass(vessel, "coma-alert")
 			AddClass(vessel, "coma-alert-"+name)
-			r.Outs(w, TagWithAttributes("<div", BlockAttrs(vessel)))
-		case "tip":
-			AddClass(vessel, "coma-vessel")
-			AddClass(vessel, "coma-vessel-"+name)
 			tag := TagWithAttributes("<div", BlockAttrs(vessel))
-			r.Outs(w, tag+fmt.Sprintf(`<p class="coma-vessel-title">%s</p><div class="coma-vessel-body">`, desc))
+			r.Outs(w, tag+fmt.Sprintf(`<p class="coma-alert-title">%s</p><div class="coma-alert-body">`, desc))
 		case "poetry":
 			parts := strings.Split(desc, " ")
 			subtitle := ""
@@ -489,33 +482,35 @@ func (r *Renderer) Vessel(w io.Writer, vessel *ast.Vessel, entering bool) {
 			if desc == "" {
 				desc = "查看"
 			}
-			fallthrough
-		default:
 			AddClass(vessel, "coma-collapse")
-			AddClass(vessel, "coma-vessel-"+name)
 			tag := TagWithAttributes("<div", BlockAttrs(vessel))
 			r.Outs(w, tag+fmt.Sprintf(`<div class="coma-colla-item">
 <div class="coma-colla-title">%s</div>
 <div class="coma-colla-content">`, desc))
+		default:
+			AddClass(vessel, "coma-vessel")
+			AddClass(vessel, "coma-vessel-"+name)
+			tag := TagWithAttributes("<div", BlockAttrs(vessel))
+			r.Outs(w, tag+fmt.Sprintf(`<p class="coma-vessel-title">%s</p><div class="coma-vessel-body">`, desc))
 		}
 	} else {
 		switch name {
-		case "grey", "gray":
+		case "grey", "gray", "tip":
 			fallthrough
-		case "note", "notice", "primary", "blue":
+		case "note", "blue":
 			fallthrough
-		case "info", "success", "green":
+		case "success", "green":
 			fallthrough
 		case "warning", "warn", "yellow":
 			fallthrough
-		case "error", "danger", "red":
-			r.Outs(w, "</div>")
-		case "tip":
+		case "danger", "red":
 			r.Outs(w, "</div></div>")
 		case "poetry":
 			r.Outs(w, "</div>")
-		default:
+		case "details":
 			r.Outs(w, "</div></div></div>")
+		default:
+			r.Outs(w, "</div></div>")
 		}
 		r.CR(w)
 	}
