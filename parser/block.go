@@ -204,20 +204,6 @@ func (p *Parser) Block(data []byte) {
 			}
 		}
 
-		// division block, need support of attributes:
-		//
-		// {#id .class} {
-		//   ...
-		// }
-		// or
-		// {#id .class} {}
-		if p.extensions&Attributes != 0 {
-			if i := p.division(data, true); i > 0 {
-				data = data[i:]
-				continue
-			}
-		}
-
 		// title block
 		//
 		// % stuff
@@ -430,14 +416,6 @@ func (p *Parser) AddBlock(n ast.Node) ast.Node {
 		p.attr = nil
 	}
 	return p.addChild(n)
-}
-
-func (p *Parser) isPrefixDivision(data []byte) bool {
-	if len(data) < 3 || data[0] != '{' {
-		return false
-	}
-	end, _, _ := isDivisionBegin(data, 0)
-	return end > 0
 }
 
 func (p *Parser) isPrefixHeading(data []byte) bool {
@@ -1235,178 +1213,6 @@ func (p *Parser) vesselBlock(data []byte, doRender bool) int {
 	return beg
 }
 
-var testParser = New()
-
-// isDivisionBegin checks if there's a division line (e.g., '{#id .class} {' or '{#id .class} {}') at the beginning of data,
-// and returns the end index if so, or beg index otherwise. It also returns whether the division is closed in single line.
-func isDivisionBegin(data []byte, beg int) (lineEnd int, attr []byte, closed bool) {
-	// i is line start, j is line end, beg is content begin (no leading spaces), end is content end (ends with '}')
-	if beg >= len(data) || data[beg] != '{' {
-		return beg, nil, closed
-	}
-	end := skipUntilChar(data, beg, '\n')
-	lineEnd = end
-	end = backChar(data, end, ' ')
-
-	if end == beg {
-		return beg, nil, closed
-	}
-	if data[end-1] != '{' && data[end-1] != '}' {
-		return beg, nil, closed
-	}
-
-	if data[end-1] == '}' {
-		closed = true
-		end--
-		end = backUntilChar(data, end, '{')
-	}
-	// this line is only "{\\s*}"
-	if beg+1 == end {
-		return beg, nil, closed
-	}
-	end--
-	end = backChar(data, end, ' ')
-
-	attr = make([]byte, end-beg+1)
-	for i := beg; i < end; i++ {
-		attr[i-beg] = data[i]
-	}
-	attr[end-beg] = '\n'
-
-	// test attribute
-	n := testParser.attribute(attr)
-	if len(n) == len(data) {
-		return beg, nil, closed
-	}
-	return lineEnd, attr, closed
-}
-
-// division returns the end index if data contains a big block at the beginning,
-// or 0 otherwise. It writes to out if doRender is true, otherwise it has no side effects.
-// If doRender is true, a final newline is mandatory to recognize the big block.
-func (p *Parser) division(data []byte, doRender bool) int {
-	// must starts with {
-	if len(data) < 3 || data[0] != '{' {
-		return 0
-	}
-	end, attr, closed := isDivisionBegin(data, 0)
-	if end == 0 {
-		return 0
-	}
-	if closed {
-		p.attribute(attr)
-		block := p.AddBlock(&ast.Division{})
-		inlineEnd := end - 1
-		inlineBeg := backUntilChar(data, inlineEnd, '{') // back function stops at pos+1
-		if inlineBeg+1 == inlineEnd && data[inlineBeg] == ' ' {
-			// tricky handle, treat space in closed division as '　'
-			p.Block([]byte("　"))
-		} else {
-			p.Block(data[inlineBeg:inlineEnd])
-		}
-		p.Finalize(block)
-		return end
-	}
-
-	blockEnd := 0
-	innerBeg := end
-	innerEnd := 0
-
-	beg := innerBeg
-	level := 0
-	indent := 100
-
-	for {
-		// safe to assume beg < len(data)
-
-		beg = skipChar(data, beg, '\n')
-		if beg >= len(data) {
-			// truncated data
-			innerEnd = len(data)
-			blockEnd = len(data)
-			break
-		}
-
-		// inner division with no leading spaces
-		end, _, closed = isDivisionBegin(data, beg)
-		if end != beg {
-			indent = 0
-			if !closed {
-				level++
-			}
-			beg = end
-			continue
-		}
-
-		end = skipUntilChar(data, beg, '\n')
-		if data[beg] == '}' && end == beg+1 {
-			// close tag
-			level--
-			if level == -1 {
-				innerEnd = beg - 1
-				blockEnd = end
-				break
-			}
-		}
-
-		leadingSpaces := skipChar(data, beg, ' ')
-		leadingTabs := skipChar(data, beg, '\t')
-		if leadingSpaces-beg >= 4 || leadingTabs-beg >= 1 {
-			if indent > 4 {
-				indent = 4
-			}
-		} else if leadingSpaces-beg > 2 {
-			if indent > 2 {
-				indent = 2
-			}
-		} else {
-			indent = 0
-		}
-
-		beg = end
-	}
-
-	if level != -1 {
-		// didn't find close tag
-		// may be warning log
-	}
-
-	var work bytes.Buffer
-	beg = innerBeg
-
-	for beg < innerEnd {
-		end = skipUntilChar(data, beg, '\n')
-		if end == beg { // empty line
-			work.Write(data[beg : end+1])
-			beg++
-			continue
-		}
-		if indent == 4 && data[beg] == '\t' {
-			beg++
-		} else if indent > 0 {
-			if beg+indent < end { // should always true
-				beg += indent
-			}
-		}
-
-		// verbatim copy to the working buffer
-		if doRender {
-			work.Write(data[beg : end+1])
-		}
-		beg = end + 1
-	}
-
-	if doRender {
-		// todo(zhangfucheng) is captionContent needed?
-		p.attribute(attr)
-		block := p.AddBlock(&ast.Division{})
-		p.Block(work.Bytes())
-		p.Finalize(block)
-	}
-
-	return blockEnd
-}
-
 func unescapeChar(str []byte) []byte {
 	if str[0] == '\\' {
 		return []byte{str[1]}
@@ -2122,12 +1928,6 @@ func (p *Parser) paragraph(data []byte) int {
 			p.renderParagraph(data[:i])
 			return i
 		}
-
-		// if there's a division after this, paragraph is over
-		//if p.isPrefixDivision(current) {
-		//	p.renderParagraph(data[:i])
-		//	return i
-		//}
 
 		// if there's a block quote, paragraph is over
 		if p.quotePrefix(current) > 0 {

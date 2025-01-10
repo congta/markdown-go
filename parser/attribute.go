@@ -22,11 +22,6 @@ func (p *Parser) attribute(data []byte) []byte {
 		return data
 	}
 
-	// must have only one }, for ast.Division
-	if skipUntilChar(data, i, '}') != end-1 {
-		return data
-	}
-
 	i = skipSpace(data, i)
 	b := &ast.Attribute{Attrs: make(map[string][]byte)}
 

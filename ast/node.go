@@ -323,11 +323,6 @@ type CodeBlock struct {
 	FenceOffset int
 }
 
-// Division parent div of multiple blocks
-type Division struct {
-	Container
-}
-
 // Vessel represents markdown custom container block node (rename to vessel due to Container is already used)
 type Vessel struct {
 	Container

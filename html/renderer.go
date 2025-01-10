@@ -1128,9 +1128,6 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 		r.OutOneOfCr(w, entering, tag, "</blockquote>")
 	case *ast.Vessel:
 		r.Vessel(w, node, entering)
-	case *ast.Division:
-		tag := TagWithAttributes("<div", BlockAttrs(node))
-		r.OutOneOfCr(w, entering, tag, "</div>")
 	case *ast.Aside:
 		tag := TagWithAttributes("<aside", BlockAttrs(node))
 		r.OutOneOfCr(w, entering, tag, "</aside>")
